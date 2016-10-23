@@ -25,6 +25,7 @@ typedef struct {
     // you don't need to change this.
     char* filename;  // filename set in header, end with '\0'.
     int header_done;  // used by handle_read to know if the header is read or not.
+	int filefd;
 } request;
 
 server svr;  // server
@@ -90,8 +91,7 @@ int main(int argc, char** argv) {
 	fd_set fdcopy, fddo;
 	FD_ZERO(&fdcopy);
 	FD_SET(svr.listen_fd, &fdcopy);
-	
-
+	int record = 0;
     while (1) {
         // TODO: Add IO multiplexing
 		fddo = fdcopy;
@@ -110,6 +110,8 @@ int main(int argc, char** argv) {
 				}
 				ERR_EXIT("accept")
 			}
+			if (!record) record = conn_fd;
+			else record = (record > conn_fd)? record: conn_fd;
 			requestP[conn_fd].conn_fd = conn_fd;
 			strcpy(requestP[conn_fd].host, inet_ntoa(cliaddr.sin_addr));
 			fprintf(stderr, "getting a new request... fd %d from %s\n", conn_fd, requestP[conn_fd].host);
@@ -160,7 +162,7 @@ int main(int argc, char** argv) {
 				else {
 					write(requestP[i].conn_fd, reject_header, sizeof(reject_header));
 				}
-				if (file_fd >= 0) close(file_fd);
+				// if (file_fd >= 0) close(file_fd);
 				FD_CLR(requestP[i].conn_fd, &fdcopy);
 				close(requestP[i].conn_fd);
 				free_request(&requestP[i]);
@@ -186,9 +188,11 @@ int main(int argc, char** argv) {
 				}
 				if (ret == 0) {
 					fprintf(stderr, "Done writing file [%s]\n", requestP[i].filename);
+					fprintf(stderr, "Unlock %s\n", requestP[i].filename);
 					fl.l_type = F_UNLCK;
 					fcntl(file_fd, F_SETLK, &fl);
 					FD_CLR(requestP[i].conn_fd, &fdcopy);
+					close(requestP[i].filefd);
 					close(requestP[i].conn_fd);
 					free_request(&requestP[i]);
 					continue;
@@ -199,20 +203,45 @@ int main(int argc, char** argv) {
 						// open the file here.
 						fprintf(stderr, "Opening file [%s]\n", requestP[i].filename);
 						// TODO: Add lock
+						file_fd = open(requestP[i].filename, O_RDWR);
 						fl.l_type = F_WRLCK;
+						fcntl(file_fd, F_GETLK, &fl);
 						// TODO: check if the request should be rejected.
-						write(requestP[i].conn_fd, accept_header, sizeof(accept_header));
-						file_fd = open(requestP[i].filename, O_WRONLY | O_CREAT | O_TRUNC,
-								  S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
+						int flag = 0;
+						for (int j = 4; j < record+1; j++) {
+							if (i != j && requestP[j].filename != NULL && strcmp(requestP[i].filename, requestP[j].filename) == 0) {
+								flag = 1;
+								break;
+							}
+						}
+
+						if (flag && fl.l_type != F_RDLCK) {
+							fprintf(stderr, "%s is locked\n", requestP[i].filename);
+							write(requestP[i].conn_fd, reject_header, sizeof(reject_header));
+							FD_CLR(requestP[i].conn_fd, &fdcopy);
+							close(requestP[i].conn_fd);
+							free_request(&requestP[i]);
+						}
+						else {
+							fprintf(stderr, "%s is unlocked\n", requestP[i].filename);
+							write(requestP[i].conn_fd, accept_header, sizeof(accept_header));
+							file_fd = open(requestP[i].filename, O_WRONLY | O_CREAT | O_TRUNC,
+									  S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
+							requestP[i].filefd = file_fd;
+							fl.l_type = F_WRLCK;
+							fl.l_whence = SEEK_SET;
+							fl.l_start = 0;
+							fl.l_len = 0;
+							fcntl(file_fd, F_SETLK, &fl);					
+							fprintf(stderr, "lock %s\n", requestP[i].filename);
+						}
 					}
 				}
 				else {
-					file_fd = open(requestP[i].filename, O_WRONLY | O_APPEND);
-					write(file_fd, requestP[i].buf, requestP[i].buf_len);
-					close(file_fd);
+					write(requestP[i].filefd, requestP[i].buf, requestP[i].buf_len);
 				}
 				//if (file_fd >=0) close(file_fd); 
-				//file_fd = -1;
+				file_fd = -1;
 			}
 		}
 #endif
@@ -236,6 +265,7 @@ static void init_request(request* reqP) {
     reqP->buf_len = 0;
     reqP->filename = NULL;
     reqP->header_done = 0;
+	reqP->filefd = -1;
 }
 
 static void free_request(request* reqP) {
