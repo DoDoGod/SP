@@ -171,35 +171,48 @@ int main(int argc, char** argv) {
 
 #ifndef READ_SERVER
 		for(int i = 4; i < maxfd; i++) {
-			printf("i = %d\n", i);
 			if (FD_ISSET(requestP[i].conn_fd, &fddo)) {
-				printf("block at %d\n", i);
-				do {	
-					ret = handle_read(&requestP[i]);
-					if (ret < 0) {
-						fprintf(stderr, "bad request from %s\n", requestP[i].host);
-						continue;
-					}
-					// requestP[conn_fd]->filename is guaranteed to be successfully set.
+				struct flock fl;
+				fl.l_type = F_WRLCK;
+				fl.l_whence = SEEK_SET;
+				fl.l_start = 0;
+				fl.l_len = 0;
+					
+				ret = handle_read(&requestP[i]);
+				if (ret != 1) printf("ret = %d\n", ret);
+				if (ret < 0) {
+					fprintf(stderr, "bad request from %s\n", requestP[i].host);
+					continue;
+				}
+				if (ret == 0) {
+					fprintf(stderr, "Done writing file [%s]\n", requestP[i].filename);
+					fl.l_type = F_UNLCK;
+					fcntl(file_fd, F_SETLK, &fl);
+					FD_CLR(requestP[i].conn_fd, &fdcopy);
+					close(requestP[i].conn_fd);
+					free_request(&requestP[i]);
+					continue;
+				}
+				// requestP[conn_fd]->filename is guaranteed to be successfully set.
+				if (requestP[i].buf_len == 0) {
 					if (file_fd == -1) {
 						// open the file here.
 						fprintf(stderr, "Opening file [%s]\n", requestP[i].filename);
 						// TODO: Add lock
+						fl.l_type = F_WRLCK;
 						// TODO: check if the request should be rejected.
 						write(requestP[i].conn_fd, accept_header, sizeof(accept_header));
 						file_fd = open(requestP[i].filename, O_WRONLY | O_CREAT | O_TRUNC,
-							  S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
-						printf("file_fd = %d\n", file_fd);
+								  S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
 					}
-					if (ret == 0) break;
+				}
+				else {
+					file_fd = open(requestP[i].filename, O_WRONLY | O_APPEND);
 					write(file_fd, requestP[i].buf, requestP[i].buf_len);
-				} while (ret > 0);		
-				fprintf(stderr, "Done writing file [%s]\n", requestP[i].filename);
-				FD_CLR(requestP[i].conn_fd, &fdcopy);
-				close(requestP[i].conn_fd);
-				free_request(&requestP[i]);
-				if (file_fd >=0) close(file_fd); 
-				file_fd = -1;
+					close(file_fd);
+				}
+				//if (file_fd >=0) close(file_fd); 
+				//file_fd = -1;
 			}
 		}
 #endif
