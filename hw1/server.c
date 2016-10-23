@@ -90,6 +90,7 @@ int main(int argc, char** argv) {
 	fd_set fdcopy, fddo;
 	FD_ZERO(&fdcopy);
 	FD_SET(svr.listen_fd, &fdcopy);
+	
 
     while (1) {
         // TODO: Add IO multiplexing
@@ -119,9 +120,7 @@ int main(int argc, char** argv) {
 #ifdef READ_SERVER
 		for(int i = 4; i < maxfd; i++) {
 			if(FD_ISSET(requestP[i].conn_fd, &fddo)) {
-				printf("i=%d: reading\n", i);
 				ret = handle_read(&requestP[i]);
-				printf("i=%d: %s %s %d\n", i, requestP[i].filename, requestP[i].buf, requestP[i].buf_len);
 				if (ret < 0) {
 					fprintf(stderr, "bad request from %s\n", requestP[i].host);
 					continue;
@@ -172,9 +171,11 @@ int main(int argc, char** argv) {
 
 #ifndef READ_SERVER
 		for(int i = 4; i < maxfd; i++) {
-			if(FD_ISSET(requestP[i].conn_fd, &fddo)) {
-            	ret = handle_read(&requestP[i]);
-				do {
+			printf("i = %d\n", i);
+			if (FD_ISSET(requestP[i].conn_fd, &fddo)) {
+				printf("block at %d\n", i);
+				do {	
+					ret = handle_read(&requestP[i]);
 					if (ret < 0) {
 						fprintf(stderr, "bad request from %s\n", requestP[i].host);
 						continue;
@@ -188,31 +189,16 @@ int main(int argc, char** argv) {
 						write(requestP[i].conn_fd, accept_header, sizeof(accept_header));
 						file_fd = open(requestP[i].filename, O_WRONLY | O_CREAT | O_TRUNC,
 							  S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH);
+						printf("file_fd = %d\n", file_fd);
 					}
-					struct flock fl;
-					fl.l_type = F_WRLCK;
-					fl.l_whence = SEEK_SET;
-					fl.l_start = 0;
-					fl.l_len = 0;
-					fcntl(file_fd, F_GETLK, &fl);
 					if (ret == 0) break;
-					if (fl.l_type == F_UNLCK) {
-						fl.l_type = F_WRLCK;
-						fcntl(file_fd, F_SETLK, &fl);
-						write(file_fd, requestP[i].buf, requestP[conn_fd].buf_len);
-						fl.l_type = F_UNLCK;
-						fcntl(file_fd, F_SETLK, &fl);
-					}
-					else {
-						write(requestP[i].conn_fd, reject_header, sizeof(reject_header));
-					}
-					ret = handle_read(&requestP[i]);
-				} while (ret > 0);
+					write(file_fd, requestP[i].buf, requestP[i].buf_len);
+				} while (ret > 0);		
 				fprintf(stderr, "Done writing file [%s]\n", requestP[i].filename);
-				if (file_fd >= 0) close(file_fd);
 				FD_CLR(requestP[i].conn_fd, &fdcopy);
 				close(requestP[i].conn_fd);
 				free_request(&requestP[i]);
+				if (file_fd >=0) close(file_fd); 
 				file_fd = -1;
 			}
 		}
