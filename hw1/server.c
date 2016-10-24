@@ -174,6 +174,7 @@ int main(int argc, char** argv) {
 #ifndef READ_SERVER
 		for(int i = 4; i < maxfd; i++) {
 			if (FD_ISSET(requestP[i].conn_fd, &fddo)) {
+				//fprintf(stderr, "%d is ready\n", i);
 				struct flock fl;
 				fl.l_type = F_WRLCK;
 				fl.l_whence = SEEK_SET;
@@ -198,8 +199,8 @@ int main(int argc, char** argv) {
 					continue;
 				}
 				// requestP[conn_fd]->filename is guaranteed to be successfully set.
-				if (requestP[i].buf_len == 0) {
-					if (file_fd == -1) {
+				if (requestP[i].filefd == -1) {
+					//if (file_fd == -1) {
 						// open the file here.
 						fprintf(stderr, "Opening file [%s]\n", requestP[i].filename);
 						// TODO: Add lock
@@ -208,7 +209,7 @@ int main(int argc, char** argv) {
 						fcntl(file_fd, F_GETLK, &fl);
 						// TODO: check if the request should be rejected.
 						int flag = 0;
-						for (int j = 4; j < record+1; j++) {
+						for (int j = 4; j < maxfd; j++) {
 							if (i != j && requestP[j].filename != NULL && strcmp(requestP[i].filename, requestP[j].filename) == 0) {
 								flag = 1;
 								break;
@@ -235,10 +236,14 @@ int main(int argc, char** argv) {
 							fcntl(file_fd, F_SETLK, &fl);					
 							fprintf(stderr, "lock %s\n", requestP[i].filename);
 						}
-					}
+					//}
 				}
-				else {
+				if (requestP[i].buf_len > 0) {
 					write(requestP[i].filefd, requestP[i].buf, requestP[i].buf_len);
+				}
+				if (requestP[i].buf_len <= 0){
+					fprintf(stderr, "dirty code!: %s\n", requestP[i].buf);
+					
 				}
 				//if (file_fd >=0) close(file_fd); 
 				file_fd = -1;
