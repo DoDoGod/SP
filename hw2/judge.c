@@ -18,7 +18,6 @@ typedef struct player{
 
 void handle_ret(char* ret, int* num)
 {
-	puts(ret);
 	char buf[512];
 	int check[4] = {0};
 	int j = 0;
@@ -124,7 +123,7 @@ int main(int argc, char *argv[])
 				for (int i = 0; i < 4; i++)
 					write(FIFO_W[i], ret, strlen(ret));
 			}
-			sleep(3);
+			printf("cnt = %d\n", cnt);
 			read(FIFO_R, ret, 512);
 			handle_ret(ret, num);
 			handle_score(num, p);
