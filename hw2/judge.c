@@ -1,10 +1,10 @@
-/*b03902042 宋子維*/
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
 #include <fcntl.h>
+#include <signal.h>
 #include <sys/types.h>
 #include <sys/time.h>
 #include <sys/stat.h>
@@ -16,10 +16,11 @@ typedef struct player{
 	int rank;
 } Player;
 
-void handle_ret(char* ret, int* num)
+int R[4];
+
+void handle_ret(const char* ret, int* num, int* done, int* online)
 {
 	char buf[512];
-	int check[4] = {0};
 	int j = 0;
 	for (int i = 0; ret[i] != '\0'; i++) {
 		buf[j++] = ret[i]; 
@@ -27,17 +28,16 @@ void handle_ret(char* ret, int* num)
 			char player;
 			int number, r;
 			buf[j++] = '\0';
-			sscanf(buf, "%c %d %d", &player, &r, &number);
-			if (num[player-'A'] != 0)
-				num[player - 'A'] = number;
-			check[player-'A'] = number;
+			if (sscanf(buf, "%c %d %d", &player, &r, &number) == 3) {
+				if (num[player-'A'] != 0 && online[player-'A'] && r == R[player-'A']) {
+					num[player - 'A'] = number;
+					(*done)++;
+				}
+			}
 			j = 0;
 		}
 	}
 	
-	memcpy(num, check, sizeof(num));
-
-	sprintf(ret, "%d %d %d %d\n", num[0], num[1], num[2], num[3]);
 	return;
 }
 
@@ -62,7 +62,7 @@ void handle_score(int* num, Player* p)
 void bubble_sort(Player* p)
 {
 	Player tmp;
-	for (int i = 3; i > 0; i++)
+	for (int i = 3; i > 0; i--)
 		for (int j = 0; j < i; j++) {
 			if (p[j].score < p[j+1].score) {
 				tmp = p[j];
@@ -96,11 +96,11 @@ int main(int argc, char *argv[])
 		mkfifo(response, 0777);
 		// fork to execute player
 		int FIFO_W[4];
-		pid_t pid;
+		pid_t pid[4];
 		for(int i = 0; i < 4; i++){
 			mkfifo(mess[i], 0777);
 			int random = rand() % 65536;
-			if((pid = fork()) == 0){
+			if((pid[i] = fork()) == 0){
 				char player_index[4];
 				char random_str[16];
 				sprintf(random_str, "%d", random);
@@ -108,31 +108,92 @@ int main(int argc, char *argv[])
 				execlp("./player", "./player", argv[1], player_index, random_str, NULL);
 			}
 			else{
+				R[i] = random;
 				FIFO_W[i] = open(mess[i], O_WRONLY);
 			}
 		}
 		// open read FIFO
 		int FIFO_R = open(response, O_RDONLY);
-		int cnt = 0, already_r = 0;
-		int num[4] = {-1, -1, -1, -1};
+		int cnt = 0;
 
-		char ret[512];
-
+		char ret[512], res[512];
+		int online[4] = {1, 1, 1, 1};
+		int total = 4, done = 0;
+		fd_set setR;
+		FD_ZERO(&setR);
 		while(cnt < 20){
+			done = 0;
 			if (cnt != 0) {
-				for (int i = 0; i < 4; i++)
-					write(FIFO_W[i], ret, strlen(ret));
+				fprintf(stderr, "fucking cnt = %d\n", cnt);
+				int num[4] = {-1, -1, -1, -1};
+				for (int i = 0; i < 4; i++) {
+					if (online[i]) {
+						write(FIFO_W[i], res, strlen(ret));
+						struct timeval timeout;
+						timeout.tv_sec = 3;
+						timeout.tv_usec = 0;
+						FD_ZERO(&setR);
+						while (1) {
+							FD_SET(FIFO_R, &setR);
+							if (select(FIFO_R+1, &setR, NULL, NULL, &timeout) < 0)
+								break;
+							if (FD_ISSET(FIFO_R, &setR)) {
+								read(FIFO_R, ret, 512);
+								int pT, rT, rN;
+								if (sscanf(ret, "%c %d %d", &pT, &rT, &rN) == 3) {
+									if (rT == R[i]) num[i] = rN;
+									break;
+								}
+							}
+							if (timeout.tv_sec == 0 && timeout.tv_usec == 0) {
+								break;
+							}
+						}
+					}
+				}
+				handle_score(num, p);
+				sprintf(res, "%d %d %d %d\n", num[0], num[1], num[2], num[3]);
+				cnt++;
+				total = done;
 			}
-			printf("cnt = %d\n", cnt);
-			read(FIFO_R, ret, 512);
-			handle_ret(ret, num);
-			handle_score(num, p);
-			cnt++;
+			else {
+				struct timeval timeout;
+				timeout.tv_sec = 3;
+				timeout.tv_usec = 0;
+				FD_ZERO(&setR);
+				int num[4] = {-1, -1, -1, -1};
+				while (done < total) {
+					FD_SET(FIFO_R, &setR);
+					if (select(FIFO_R+1, &setR, NULL, NULL, &timeout) < 0)
+						break;
+					if (FD_ISSET(FIFO_R, &setR)) {
+						read(FIFO_R, ret, 512);
+						handle_ret(ret, num, &done, online);
+					}
+					if (timeout.tv_sec == 0 && timeout.tv_usec == 0) {
+						break;
+					}
+				}
+				for (int i = 0; i < 4; i++)
+					if (online[i] && num[i] == -1) {
+						online[i] = 0;
+						num[i] = 0;
+					}
+				handle_score(num, p);
+				sprintf(ret, "%d %d %d %d\n", num[0], num[1], num[2], num[3]);
+				strcpy(res, ret);
+				cnt++;
+				total = done;
+			}
 		}
+		fprintf(stderr, "Fucking Blocking???mgfddf321321\n");
 		// wait for all children 
 		for(int i = 0; i < 4; i++){
+			// kill(pid[i], SIGKILL);
 			wait(NULL);
 		}
+		fprintf(stderr, "Fucking Blocking???3213\n");
+		fprintf(stderr, "Fucking Blocking???\n");
 		// close and remove FIFO
 		close(FIFO_R);
 		unlink(response);
@@ -141,8 +202,11 @@ int main(int argc, char *argv[])
 			unlink(mess[i]);
 		}
 		// deal with output
-	
+
 		bubble_sort(p);
+		for (int i = 0; i < 4; i++)	{
+			fprintf(stderr, "player %d, score: %d\n", p[i].id, p[i].score);
+		}
 
 		Player rank[16];
 		int j = 1, pre = -1, k = 0;
@@ -157,12 +221,23 @@ int main(int argc, char *argv[])
 			rank[i].rank = j;
 			pre = p[i].score;
 		}
+		Player tmp;
+		for (int i = 3; i > 0; i--)
+			for (int j = 0; j < i; j++) {
+				if (rank[j].id > rank[j+1].id) {
+					tmp = rank[j];
+					rank[j] = rank[j+1];
+					rank[j+1] = tmp;
+				}
+			}
 	
 		// write into pipe of bidding_system(stdout)
 		char output[512];
+		
 		sprintf(output, "%d %d\n%d %d\n%d %d\n%d %d\n",
 						rank[0].id, rank[0].rank, rank[1].id, rank[1].rank, 
 						rank[2].id, rank[2].rank, rank[3].id, rank[3].rank);
+
 		write(1, output, strlen(output));
 		fsync(1);
 	}

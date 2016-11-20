@@ -1,4 +1,3 @@
-/*b03902042 宋子維*/
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -31,15 +30,37 @@ int main(int argc, char *argv[])
 	char ret[512];
 	while(cnt < 20){
 		if (cnt != 0) {
-			read(FIFO_R, ret, 512);
+			while (1) {
+				fd_set R;
+				FD_ZERO(&R);
+				FD_SET(FIFO_R, &R);
+				select(FIFO_R+1, &R, NULL, NULL, NULL);
+				if (FD_ISSET(FIFO_R, &R)) {
+					if (read(FIFO_R, ret, 512) > 0) {
+						break;				
+					}
+				}
+				fprintf(stderr, "fucking block read???\n");
+			}
 		}
-		int r = rand() % 3;
-		sprintf(ret, "%c %d %d\n", player_index, random_key, r);
-		write(FIFO_W, ret, strlen(ret));
+		int r = (cnt+(player_index-'A')) % 3;
+		sprintf(ret, "%c %d %d\n\0", player_index, random_key, number[r]);
+		
+		while (1) {
+			fd_set W;
+			FD_ZERO(&W);
+			FD_SET(FIFO_W, &W);
+			select(FIFO_W+1, NULL, &W, NULL, NULL);
+			if (FD_ISSET(FIFO_W, &W)) {
+				write(FIFO_W, ret, strlen(ret));
+				break;
+			}	
+			fprintf(stderr, "fucking block write???\n");
+		}
+		cnt++;
 	}
-
 	close(FIFO_R);
 	close(FIFO_W);
-	
+	fprintf(stderr, "Player %c dies\n", player_index);
 	return 0;
 }

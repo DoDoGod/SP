@@ -1,4 +1,3 @@
-/*b03902042 宋子維*/
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -38,8 +37,8 @@ int cmp(const void* a, const void* b)
 {
 	Player* p1 = (Player*) a;
 	Player* p2 = (Player*) b;
-	if (p1->score != p2->score) return p1->score > p2->score;
-	else return p1->id < p2->id;
+	if (p1->score != p2->score) return p1->score < p2->score;
+	else return p1->id > p2->id;
 }
 
 void handle_rank(const char *buffer, Player *p)
@@ -153,7 +152,7 @@ int main(int argc, char *argv[])
 	qsort(p, player_num, sizeof(Player), cmp);
 
 	for(int i = 0; i < player_num; i++)
-		printf("%d %d\n", p[i].id, p[i].score);
+		printf("%d %d\n", p[i].id+1, p[i].score);
 
 	for(int i = 0; i < host_num; i++)
 		wait(NULL);
