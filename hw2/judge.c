@@ -29,7 +29,7 @@ void handle_ret(const char* ret, int* num, int* done, int* online)
 			int number, r;
 			buf[j++] = '\0';
 			if (sscanf(buf, "%c %d %d", &player, &r, &number) == 3) {
-				if (num[player-'A'] != 0 && online[player-'A'] && r == R[player-'A']) {
+				if (num[player-'A'] == 0 && online[player-'A'] && r == R[player-'A']) {
 					num[player - 'A'] = number;
 					(*done)++;
 				}
@@ -124,7 +124,6 @@ int main(int argc, char *argv[])
 		while(cnt < 20){
 			done = 0;
 			if (cnt != 0) {
-				fprintf(stderr, "fucking cnt = %d\n", cnt);
 				int num[4] = {-1, -1, -1, -1};
 				for (int i = 0; i < 4; i++) {
 					if (online[i]) {
@@ -161,7 +160,7 @@ int main(int argc, char *argv[])
 				timeout.tv_sec = 3;
 				timeout.tv_usec = 0;
 				FD_ZERO(&setR);
-				int num[4] = {-1, -1, -1, -1};
+				int num[4] = {0};
 				while (done < total) {
 					FD_SET(FIFO_R, &setR);
 					if (select(FIFO_R+1, &setR, NULL, NULL, &timeout) < 0)
@@ -175,7 +174,7 @@ int main(int argc, char *argv[])
 					}
 				}
 				for (int i = 0; i < 4; i++)
-					if (online[i] && num[i] == -1) {
+					if (online[i] && num[i] == 0) {
 						online[i] = 0;
 						num[i] = 0;
 					}
@@ -186,14 +185,10 @@ int main(int argc, char *argv[])
 				total = done;
 			}
 		}
-		fprintf(stderr, "Fucking Blocking???mgfddf321321\n");
 		// wait for all children 
 		for(int i = 0; i < 4; i++){
-			// kill(pid[i], SIGKILL);
 			wait(NULL);
 		}
-		fprintf(stderr, "Fucking Blocking???3213\n");
-		fprintf(stderr, "Fucking Blocking???\n");
 		// close and remove FIFO
 		close(FIFO_R);
 		unlink(response);
@@ -202,11 +197,10 @@ int main(int argc, char *argv[])
 			unlink(mess[i]);
 		}
 		// deal with output
-
 		bubble_sort(p);
-		for (int i = 0; i < 4; i++)	{
-			fprintf(stderr, "player %d, score: %d\n", p[i].id, p[i].score);
-		}
+		//for (int i = 0; i < 4; i++)	{
+		//	fprintf(stderr, "player %d, score: %d\n", p[i].id, p[i].score);
+		//}
 
 		Player rank[16];
 		int j = 1, pre = -1, k = 0;

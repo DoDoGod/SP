@@ -40,7 +40,6 @@ int main(int argc, char *argv[])
 						break;				
 					}
 				}
-				fprintf(stderr, "fucking block read???\n");
 			}
 		}
 		int r = (cnt+(player_index-'A')) % 3;
@@ -52,15 +51,14 @@ int main(int argc, char *argv[])
 			FD_SET(FIFO_W, &W);
 			select(FIFO_W+1, NULL, &W, NULL, NULL);
 			if (FD_ISSET(FIFO_W, &W)) {
+				//fprintf(stderr, "%c fucking write %d\n", player_index, cnt);
 				write(FIFO_W, ret, strlen(ret));
+				cnt++;
 				break;
 			}	
-			fprintf(stderr, "fucking block write???\n");
 		}
-		cnt++;
 	}
 	close(FIFO_R);
 	close(FIFO_W);
-	fprintf(stderr, "Player %c dies\n", player_index);
 	return 0;
 }
