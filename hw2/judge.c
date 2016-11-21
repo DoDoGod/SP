@@ -145,6 +145,8 @@ int main(int argc, char *argv[])
 								}
 							}
 							if (timeout.tv_sec == 0 && timeout.tv_usec == 0) {
+								online[i] = 0;
+								kill(pid[i], SIGKILL);
 								break;
 							}
 						}
